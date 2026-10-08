@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-舟舟算价助手 - 安卓版 v2.1 极简稳定版
-只保留算价功能
+舟舟算价助手 - 安卓版 v2.2.0
+功能：材质算价 + 悬浮窗模式
 """
 
 import re
 import os
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.button import Button
 from kivy.uix.label import Label
@@ -19,7 +18,7 @@ from kivy.metrics import dp
 from kivy.utils import get_color_from_hex
 
 # ========== 版本号 ==========
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 # ========== 全局设置 ==========
 DISCOUNT = 0.9
@@ -81,6 +80,70 @@ def get_font():
     return None
 
 FONT = get_font()
+
+# ========== 安卓悬浮窗工具 ==========
+class FloatingWindowHelper:
+    """安卓悬浮窗助手"""
+    
+    def __init__(self):
+        self.is_android = False
+        self.has_permission = False
+        self._init_android()
+    
+    def _init_android(self):
+        """初始化安卓相关"""
+        try:
+            from jnius import autoclass
+            self.PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            self.Settings = autoclass('android.provider.Settings')
+            self.Intent = autoclass('android.content.Intent')
+            self.Uri = autoclass('android.net.Uri')
+            self.Context = autoclass('android.content.Context')
+            self.is_android = True
+        except Exception as e:
+            print(f"非安卓环境或jnius初始化失败: {e}")
+            self.is_android = False
+    
+    def check_permission(self):
+        """检查悬浮窗权限"""
+        if not self.is_android:
+            return True
+        try:
+            from jnius import autoclass
+            Build = autoclass('android.os.Build')
+            if Build.VERSION.SDK_INT >= 23:
+                return self.Settings.canDrawOverlays(self.PythonActivity.mActivity)
+            return True
+        except Exception as e:
+            print(f"检查权限失败: {e}")
+            return False
+    
+    def request_permission(self):
+        """请求悬浮窗权限"""
+        if not self.is_android:
+            return
+        try:
+            intent = self.Intent(
+                self.Intent.ACTION_MANAGE_OVERLAY_PERMISSION,
+                self.Uri.parse("package:" + self.PythonActivity.getPackageName())
+            )
+            self.PythonActivity.mActivity.startActivity(intent)
+        except Exception as e:
+            print(f"请求权限失败: {e}")
+    
+    def move_to_back(self):
+        """将APP退到后台（显示悬浮球）"""
+        if not self.is_android:
+            return
+        try:
+            self.PythonActivity.mActivity.moveTaskToBack(True)
+        except Exception as e:
+            print(f"退到后台失败: {e}")
+
+
+# 全局悬浮窗助手
+float_helper = FloatingWindowHelper()
+
 
 # ========== 单位转换 ==========
 def parse_dimension(text):
@@ -154,32 +217,54 @@ class MainLayout(BoxLayout):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
         self.padding = dp(15)
-        self.spacing = dp(12)
+        self.spacing = dp(10)
         
         # 背景色
-        self.window = Window
-        self.window.clearcolor = get_color_from_hex('#1a1a2e')
+        Window.clearcolor = get_color_from_hex('#1a1a2e')
         
-        # 标题
+        # 顶部标题栏
+        top_bar = BoxLayout(
+            orientation='horizontal',
+            size_hint_y=None,
+            height=dp(45),
+            spacing=dp(10),
+        )
+        
         title = Label(
-            text=f"舟舟算价助手 v{VERSION}",
-            font_size=dp(22),
+            text=f"舟舟算价 v{VERSION}",
+            font_size=dp(18),
             bold=True,
             color=get_color_from_hex('#ffffff'),
-            size_hint_y=None,
-            height=dp(40),
         )
         if FONT:
             title.font_name = FONT
-        self.add_widget(title)
+        top_bar.add_widget(title)
+        
+        # 悬浮窗按钮
+        self.float_btn = Button(
+            text="悬浮窗",
+            size_hint_x=None,
+            width=dp(80),
+            background_normal='',
+            background_color=get_color_from_hex('#00d9a0'),
+            color=(0, 0, 0, 1),
+            font_size=dp(13),
+            bold=True,
+        )
+        if FONT:
+            self.float_btn.font_name = FONT
+        self.float_btn.bind(on_press=self.toggle_floating)
+        top_bar.add_widget(self.float_btn)
+        
+        self.add_widget(top_bar)
         
         # 材质选择
         mat_label = Label(
             text="选择材质",
-            font_size=dp(15),
+            font_size=dp(14),
             color=get_color_from_hex('#b0b0d0'),
             size_hint_y=None,
-            height=dp(25),
+            height=dp(22),
         )
         if FONT:
             mat_label.font_name = FONT
@@ -189,7 +274,7 @@ class MainLayout(BoxLayout):
             text=MATERIALS[0]["name"],
             values=[m["name"] for m in MATERIALS],
             size_hint_y=None,
-            height=dp(50),
+            height=dp(45),
             background_color=get_color_from_hex('#2a2a4a'),
         )
         if FONT:
@@ -198,11 +283,11 @@ class MainLayout(BoxLayout):
         
         # 材质信息
         self.mat_info = Label(
-            text=f"单价：{MATERIALS[0]['price']}元/㎡",
-            font_size=dp(13),
+            text=f"单价：{MATERIALS[0]['price']}元/㎡ | 重量：{MATERIALS[0]['weight']}kg/㎡",
+            font_size=dp(12),
             color=get_color_from_hex('#00d9a0'),
             size_hint_y=None,
-            height=dp(25),
+            height=dp(20),
         )
         if FONT:
             self.mat_info.font_name = FONT
@@ -211,10 +296,10 @@ class MainLayout(BoxLayout):
         # 尺寸输入
         size_label = Label(
             text="输入尺寸（如 100x200）",
-            font_size=dp(15),
+            font_size=dp(14),
             color=get_color_from_hex('#b0b0d0'),
             size_hint_y=None,
-            height=dp(25),
+            height=dp(22),
         )
         if FONT:
             size_label.font_name = FONT
@@ -224,11 +309,11 @@ class MainLayout(BoxLayout):
             hint_text="例如：100x200",
             multiline=False,
             size_hint_y=None,
-            height=dp(50),
+            height=dp(45),
             background_color=get_color_from_hex('#2a2a4a'),
             foreground_color=get_color_from_hex('#ffffff'),
             cursor_color=get_color_from_hex('#e94560'),
-            font_size=dp(16),
+            font_size=dp(15),
         )
         if FONT:
             self.size_input.font_name = FONT
@@ -238,11 +323,11 @@ class MainLayout(BoxLayout):
         calc_btn = Button(
             text="开始算价",
             size_hint_y=None,
-            height=dp(55),
+            height=dp(50),
             background_normal='',
             background_color=get_color_from_hex('#e94560'),
             color=get_color_from_hex('#ffffff'),
-            font_size=dp(18),
+            font_size=dp(17),
             bold=True,
         )
         if FONT:
@@ -250,13 +335,13 @@ class MainLayout(BoxLayout):
         calc_btn.bind(on_press=self.calculate)
         self.add_widget(calc_btn)
         
-        # 结果区域（可滚动）
+        # 结果区域
         self.result_label = Label(
             text="请输入尺寸后点击算价",
-            font_size=dp(15),
+            font_size=dp(14),
             color=get_color_from_hex('#ffffff'),
             size_hint_y=None,
-            height=dp(300),
+            height=dp(350),
             text_size=(self.width - dp(30), None),
             valign='top',
         )
@@ -302,6 +387,30 @@ class MainLayout(BoxLayout):
             f"{reason}"
         )
         self.result_label.text = result
+    
+    def toggle_floating(self, instance):
+        """切换悬浮窗模式"""
+        if not float_helper.is_android:
+            self.result_label.text = "当前不是安卓环境，无法使用悬浮窗"
+            return
+        
+        if not float_helper.check_permission():
+            # 没有权限，跳转到设置
+            self.result_label.text = (
+                "需要悬浮窗权限！\n\n"
+                "请在打开的设置页面中，\n"
+                "找到「舟舟算价助手」，\n"
+                "打开「允许显示在其他应用上层」开关，\n"
+                "然后返回APP再次点击悬浮窗按钮。"
+            )
+            float_helper.request_permission()
+            return
+        
+        # 有权限，退到后台（悬浮球会由系统保持APP在后台运行）
+        self.result_label.text = "已进入悬浮窗模式！\n\nAPP已退到后台，\n点击悬浮球或从最近任务打开即可回来算价。"
+        # 延迟一下让用户看到提示
+        from kivy.clock import Clock
+        Clock.schedule_once(lambda dt: float_helper.move_to_back(), 1.5)
 
 
 # ========== 应用 ==========
