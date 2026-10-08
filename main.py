@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-舟舟算价助手 - 安卓版
+舟舟算价助手 - 安卓版 v2.0
 功能：材质算价、快捷备注、邀请下单
+风格：柔光玻璃材质
 """
 
 import re
-import json
 import os
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -21,13 +21,31 @@ from kivy.core.window import Window
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.utils import get_color_from_hex
+from kivy.graphics import Color, RoundedRectangle, Rectangle
 
 # ========== 版本号 ==========
-VERSION = "1.0.0"
+VERSION = "2.0.0"
 
 # ========== 全局设置 ==========
 DISCOUNT = 0.9  # 默认九折
 MIN_PRICE = 20  # 最低价20元
+
+# ========== 颜色主题（柔光玻璃） ==========
+COLORS = {
+    'bg_dark': '#1a1a2e',
+    'bg_medium': '#16213e',
+    'bg_light': '#0f3460',
+    'card_bg': '#2a2a4a',
+    'card_border': '#4a4a7a',
+    'text_primary': '#ffffff',
+    'text_secondary': '#b0b0d0',
+    'accent': '#e94560',
+    'accent_light': '#ff6b81',
+    'success': '#00d9a0',
+    'warning': '#ffc107',
+    'glass': 'rgba(255, 255, 255, 0.1)',
+    'glass_border': 'rgba(255, 255, 255, 0.2)',
+}
 
 # ========== 材质数据（内置） ==========
 MATERIALS = [
@@ -82,11 +100,103 @@ DEFAULT_NOTE_BUTTONS = [
 ]
 
 
+# ========== 中文字体设置 ==========
+def get_chinese_font():
+    """获取中文字体路径"""
+    # 尝试安卓系统中文字体
+    android_fonts = [
+        '/system/fonts/NotoSansCJK-Regular.ttc',
+        '/system/fonts/NotoSansSC-Regular.otf',
+        '/system/fonts/DroidSansFallback.ttf',
+        '/system/fonts/SourceHanSansCN-Regular.otf',
+    ]
+    for font_path in android_fonts:
+        if os.path.exists(font_path):
+            return font_path
+    
+    # 尝试项目目录下的字体
+    local_fonts = ['NotoSansSC-Regular.ttf', 'font.ttf', 'chinese.ttf']
+    for font_name in local_fonts:
+        if os.path.exists(font_name):
+            return font_name
+    
+    return None
+
+CHINESE_FONT = get_chinese_font()
+
+
+class GlassLabel(Label):
+    """柔光玻璃风格标签"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('color', get_color_from_hex(COLORS['text_primary']))
+        kwargs.setdefault('font_size', dp(14))
+        if CHINESE_FONT:
+            kwargs.setdefault('font_name', CHINESE_FONT)
+        super().__init__(**kwargs)
+
+
+class GlassButton(Button):
+    """柔光玻璃风格按钮"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('background_normal', '')
+        kwargs.setdefault('background_color', get_color_from_hex(COLORS['card_bg']))
+        kwargs.setdefault('color', get_color_from_hex(COLORS['text_primary']))
+        kwargs.setdefault('font_size', dp(14))
+        kwargs.setdefault('size_hint_y', None)
+        kwargs.setdefault('height', dp(45))
+        if CHINESE_FONT:
+            kwargs.setdefault('font_name', CHINESE_FONT)
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(rgba=get_color_from_hex(COLORS['glass_border']))
+            self.border = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(8)])
+        self.bind(pos=self.update_border, size=self.update_border)
+    
+    def update_border(self, *args):
+        self.border.pos = self.pos
+        self.border.size = self.size
+
+
+class AccentButton(GlassButton):
+    """强调按钮（红色）"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('background_color', get_color_from_hex(COLORS['accent']))
+        super().__init__(**kwargs)
+
+
+class SuccessButton(GlassButton):
+    """成功按钮（绿色）"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('background_color', get_color_from_hex(COLORS['success']))
+        kwargs.setdefault('color', (0, 0, 0, 1))
+        super().__init__(**kwargs)
+
+
+class GlassCard(BoxLayout):
+    """柔光玻璃卡片"""
+    def __init__(self, **kwargs):
+        kwargs.setdefault('orientation', 'vertical')
+        kwargs.setdefault('padding', dp(12))
+        kwargs.setdefault('spacing', dp(8))
+        super().__init__(**kwargs)
+        with self.canvas.before:
+            Color(rgba=get_color_from_hex(COLORS['card_bg']))
+            self.bg = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(12)])
+            Color(rgba=get_color_from_hex(COLORS['glass_border']))
+            self.border = RoundedRectangle(pos=self.pos, size=self.size, radius=[dp(12)])
+        self.bind(pos=self.update_bg, size=self.update_bg)
+    
+    def update_bg(self, *args):
+        self.bg.pos = self.pos
+        self.bg.size = self.size
+        self.border.pos = self.pos
+        self.border.size = self.size
+
+
 # ========== 单位智能转换 ==========
 def parse_dimension(text):
     """解析尺寸文本，返回(长m, 宽m, 原始描述)"""
     text = text.strip()
-    # 提取所有数字和单位
     pattern = r'(\d+\.?\d*)\s*(m|cm|mm|米|厘米|毫米)?'
     matches = re.findall(pattern, text, re.IGNORECASE)
 
@@ -97,7 +207,6 @@ def parse_dimension(text):
         value = float(value_str)
         unit = unit.lower() if unit else ''
 
-        # 带单位的直接转换
         if unit in ['m', '米']:
             meters = value
         elif unit in ['cm', '厘米']:
@@ -105,7 +214,6 @@ def parse_dimension(text):
         elif unit in ['mm', '毫米']:
             meters = value / 1000.0
         else:
-            # 无单位：<10按m，>=10按cm
             if value < 10:
                 meters = value
             else:
@@ -124,24 +232,20 @@ def parse_dimension(text):
 # ========== 撩尺计算 ==========
 def liao_chi(short_edge, material_name=""):
     """撩尺：只撩短边，长边不变"""
-    # 凯彼得材质不撩尺
     if "凯彼得" in material_name:
         return short_edge, "凯彼得材质，无需撩尺"
 
-    short_cm = short_edge * 100  # 转成cm
+    short_cm = short_edge * 100
 
-    # <40按40
     if short_cm < 40:
         result = 40
         reason = f"短边{short_cm:.0f}cm<40，按40算"
-    # <=200按20间隔向上取整
     elif short_cm <= 200:
         result = ((int(short_cm) + 19) // 20) * 20
         if result == int(short_cm):
             reason = f"短边{short_cm:.0f}cm正好是整数，无需撩尺"
         else:
             reason = f"短边{short_cm:.0f}cm，撩尺到{result}cm（20间隔）"
-    # >200按50间隔
     else:
         result = ((int(short_cm) + 49) // 50) * 50
         reason = f"短边{short_cm:.0f}cm，撩尺到{result}cm（50间隔）"
@@ -152,7 +256,6 @@ def liao_chi(short_edge, material_name=""):
 # ========== 算价核心 ==========
 def calculate_price(length, width, material, discount=DISCOUNT):
     """计算价格，返回(原价, 折扣价, 撩尺后长, 撩尺后宽, 面积, 重量, 说明)"""
-    # 确定长短边
     if length >= width:
         long_edge = length
         short_edge = width
@@ -160,30 +263,24 @@ def calculate_price(length, width, material, discount=DISCOUNT):
         long_edge = width
         short_edge = length
 
-    # 撩尺
     liao_short, liao_reason = liao_chi(short_edge, material["name"])
 
-    # 撩尺后的尺寸
     final_long = long_edge
     final_short = liao_short
     area = final_long * final_short
 
-    # 算原价
     original_price = area * material["price"]
 
-    # 最低价20元
     if original_price < MIN_PRICE:
         original_price = MIN_PRICE
         price_reason = f"原价{area * material['price']:.2f}元<20，按最低价20元算"
     else:
         price_reason = f"面积{area:.2f}㎡ x 单价{material['price']}元/㎡ = {original_price:.2f}元"
 
-    # 折扣价
     discount_price = original_price * discount
     if discount_price < MIN_PRICE:
         discount_price = MIN_PRICE
 
-    # 重量（按原尺寸面积，不按撩尺后）
     weight = (length * width) * material.get("weight", 0)
 
     return (round(original_price, 2), round(discount_price, 2),
@@ -195,7 +292,6 @@ def calculate_price(length, width, material, discount=DISCOUNT):
 # ========== 快捷备注话术生成 ==========
 def generate_note(button_name, input_text):
     """根据按钮和输入生成备注话术"""
-    # 提取数字
     numbers = []
     for match in re.finditer(r'(\d+\.?\d*)', input_text):
         numbers.append(float(match.group(1)))
@@ -203,12 +299,10 @@ def generate_note(button_name, input_text):
     if len(numbers) < 2:
         return "请输入至少两个尺寸，如 100 200"
 
-    # 识别大数小数
     sorted_nums = sorted(numbers)
     small = sorted_nums[0]
     large = sorted_nums[-1]
 
-    # 三个数时，最小的是窄边
     narrow = None
     corner = "拐角方向"
     if len(numbers) >= 3:
@@ -216,14 +310,12 @@ def generate_note(button_name, input_text):
         small = sorted_nums[1]
         large = sorted_nums[2]
 
-    # 检查是否有左/右/左拐/右拐
     input_lower = input_text.lower()
     if "左拐" in input_lower or "左" in input_lower:
         corner = "左拐"
     elif "右拐" in input_lower or "右" in input_lower:
         corner = "右拐"
 
-    # 格式化数字
     def fmt(n):
         if n == int(n):
             return str(int(n))
@@ -233,7 +325,6 @@ def generate_note(button_name, input_text):
     large_str = fmt(large)
     narrow_str = fmt(narrow) if narrow else ""
 
-    # 根据按钮生成
     if button_name == "横版":
         return f"#{small_str}x{large_str}cm横版*1块"
     elif button_name == "竖版":
@@ -259,12 +350,260 @@ def calculate_invite(num1, num2):
     large = max(num1, num2)
     small = min(num1, num2)
 
-    # 取整数（向下取整，不四舍五入）
     integer = int(large // small)
-    # 余数 = 大数 - 整数×小数
     remainder = large - integer * small
 
     return integer, remainder, large, small, f"{large} ÷ {small} = {integer} 余 {remainder:.2f}"
+
+
+# ========== 材质算价页面 ==========
+class PriceCalculatorTab(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(12)
+        self.spacing = dp(10)
+
+        # 标题
+        title = GlassLabel(text=f"舟舟算价助手 v{VERSION}", font_size=dp(20), bold=True, size_hint_y=None, height=dp(35))
+        self.add_widget(title)
+
+        # 材质选择卡片
+        material_card = GlassCard()
+        material_card.add_widget(GlassLabel(text="选择材质", font_size=dp(14), bold=True, size_hint_y=None, height=dp(25)))
+        
+        self.material_spinner = Spinner(
+            text=MATERIALS[0]["name"],
+            values=[m["name"] for m in MATERIALS],
+            size_hint_y=None,
+            height=dp(45),
+            background_color=get_color_from_hex(COLORS['card_bg']),
+        )
+        if CHINESE_FONT:
+            self.material_spinner.font_name = CHINESE_FONT
+        self.material_spinner.bind(text=self.on_material_select)
+        material_card.add_widget(self.material_spinner)
+        
+        self.material_info = GlassLabel(text=f"单价：{MATERIALS[0]['price']}元/㎡ | 重量：{MATERIALS[0]['weight']}kg/㎡", 
+                                         font_size=dp(12), color=get_color_from_hex(COLORS['text_secondary']),
+                                         size_hint_y=None, height=dp(20))
+        material_card.add_widget(self.material_info)
+        self.add_widget(material_card)
+
+        # 尺寸输入卡片
+        size_card = GlassCard()
+        size_card.add_widget(GlassLabel(text="输入尺寸（如 100x200 或 1m x 1.2m）", 
+                                         font_size=dp(14), bold=True, size_hint_y=None, height=dp(25)))
+        self.size_input = TextInput(
+            hint_text="例如：100x200",
+            multiline=False,
+            size_hint_y=None,
+            height=dp(45),
+            background_color=get_color_from_hex('#1a1a2e'),
+            foreground_color=get_color_from_hex(COLORS['text_primary']),
+            cursor_color=get_color_from_hex(COLORS['accent']),
+        )
+        if CHINESE_FONT:
+            self.size_input.font_name = CHINESE_FONT
+        size_card.add_widget(self.size_input)
+        self.add_widget(size_card)
+
+        # 计算按钮
+        calc_btn = AccentButton(text="开始算价", size_hint_y=None, height=dp(50))
+        calc_btn.bind(on_press=self.calculate)
+        self.add_widget(calc_btn)
+
+        # 结果卡片
+        self.result_card = GlassCard()
+        self.result_card.add_widget(GlassLabel(text="计算结果", font_size=dp(16), bold=True, 
+                                                size_hint_y=None, height=dp(25)))
+        self.result_label = GlassLabel(text="请输入尺寸后点击算价", font_size=dp(13),
+                                        size_hint_y=None, height=dp(150))
+        self.result_card.add_widget(self.result_label)
+        self.add_widget(self.result_card)
+
+        self.current_material = MATERIALS[0]
+
+    def on_material_select(self, spinner, text):
+        for m in MATERIALS:
+            if m["name"] == text:
+                self.current_material = m
+                self.material_info.text = f"单价：{m['price']}元/㎡ | 重量：{m['weight']}kg/㎡"
+                break
+
+    def calculate(self, instance):
+        text = self.size_input.text.strip()
+        if not text:
+            self.result_label.text = "请先输入尺寸"
+            return
+
+        length, width, desc = parse_dimension(text)
+        if length is None:
+            self.result_label.text = desc
+            return
+
+        original_price, discount_price, final_long, final_short, area, weight, reason = calculate_price(
+            length, width, self.current_material
+        )
+
+        result_text = (
+            f"{desc}\n\n"
+            f"撩尺后尺寸：{final_long*100:.0f}cm x {final_short*100:.0f}cm\n"
+            f"面积：{area:.2f}㎡\n"
+            f"重量：{weight:.2f}kg\n\n"
+            f"原价：{original_price:.2f}元\n"
+            f"九折价：{discount_price:.2f}元\n\n"
+            f"{reason}"
+        )
+        self.result_label.text = result_text
+
+
+# ========== 快捷备注页面 ==========
+class QuickNoteTab(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(12)
+        self.spacing = dp(10)
+
+        title = GlassLabel(text="快捷备注", font_size=dp(20), bold=True, size_hint_y=None, height=dp(35))
+        self.add_widget(title)
+
+        # 输入卡片
+        input_card = GlassCard()
+        input_card.add_widget(GlassLabel(text="输入尺寸（如 100 200，L型可输三个数）", 
+                                          font_size=dp(14), bold=True, size_hint_y=None, height=dp(25)))
+        self.note_input = TextInput(
+            hint_text="例如：100 200",
+            multiline=False,
+            size_hint_y=None,
+            height=dp(45),
+            background_color=get_color_from_hex('#1a1a2e'),
+            foreground_color=get_color_from_hex(COLORS['text_primary']),
+            cursor_color=get_color_from_hex(COLORS['accent']),
+        )
+        if CHINESE_FONT:
+            self.note_input.font_name = CHINESE_FONT
+        input_card.add_widget(self.note_input)
+        self.add_widget(input_card)
+
+        # 按钮网格
+        btn_grid = GridLayout(cols=2, spacing=dp(10), size_hint_y=None)
+        btn_grid.bind(minimum_height=btn_grid.setter('height'))
+        
+        for btn_info in DEFAULT_NOTE_BUTTONS:
+            btn = GlassButton(text=btn_info["name"], size_hint_y=None, height=dp(50))
+            btn.bind(on_press=lambda instance, name=btn_info["name"]: self.generate_note(name))
+            btn_grid.add_widget(btn)
+        
+        self.add_widget(btn_grid)
+
+        # 结果卡片
+        result_card = GlassCard()
+        result_card.add_widget(GlassLabel(text="生成结果", font_size=dp(16), bold=True, 
+                                           size_hint_y=None, height=dp(25)))
+        self.result_label = GlassLabel(text="点击按钮生成备注话术", font_size=dp(14),
+                                       size_hint_y=None, height=dp(80))
+        result_card.add_widget(self.result_label)
+        
+        copy_btn = SuccessButton(text="复制结果", size_hint_y=None, height=dp(45))
+        copy_btn.bind(on_press=self.copy_result)
+        result_card.add_widget(copy_btn)
+        
+        self.add_widget(result_card)
+
+    def generate_note(self, button_name):
+        text = self.note_input.text.strip()
+        if not text:
+            self.result_label.text = "请先输入尺寸"
+            return
+        result = generate_note(button_name, text)
+        self.result_label.text = result
+
+    def copy_result(self, instance):
+        text = self.result_label.text
+        try:
+            from kivy.core.clipboard import Clipboard
+            Clipboard.copy(text)
+            self.result_label.text = "已复制到剪贴板！\n\n" + text
+        except:
+            pass
+
+
+# ========== 邀请下单页面 ==========
+class InviteOrderTab(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(12)
+        self.spacing = dp(10)
+
+        title = GlassLabel(text="邀请下单计算", font_size=dp(20), bold=True, size_hint_y=None, height=dp(35))
+        self.add_widget(title)
+
+        # 输入卡片
+        input_card = GlassCard()
+        input_card.add_widget(GlassLabel(text="输入两个数字", font_size=dp(14), bold=True, 
+                                          size_hint_y=None, height=dp(25)))
+        
+        self.num1_input = TextInput(
+            hint_text="第一个数",
+            multiline=False,
+            size_hint_y=None,
+            height=dp(45),
+            background_color=get_color_from_hex('#1a1a2e'),
+            foreground_color=get_color_from_hex(COLORS['text_primary']),
+            cursor_color=get_color_from_hex(COLORS['accent']),
+        )
+        input_card.add_widget(self.num1_input)
+        
+        self.num2_input = TextInput(
+            hint_text="第二个数",
+            multiline=False,
+            size_hint_y=None,
+            height=dp(45),
+            background_color=get_color_from_hex('#1a1a2e'),
+            foreground_color=get_color_from_hex(COLORS['text_primary']),
+            cursor_color=get_color_from_hex(COLORS['accent']),
+        )
+        input_card.add_widget(self.num2_input)
+        self.add_widget(input_card)
+
+        # 计算按钮
+        calc_btn = AccentButton(text="开始计算", size_hint_y=None, height=dp(50))
+        calc_btn.bind(on_press=self.calculate)
+        self.add_widget(calc_btn)
+
+        # 结果卡片
+        result_card = GlassCard()
+        result_card.add_widget(GlassLabel(text="计算结果", font_size=dp(16), bold=True, 
+                                           size_hint_y=None, height=dp(25)))
+        self.result_label = GlassLabel(text="请输入数字后点击计算", font_size=dp(14),
+                                       size_hint_y=None, height=dp(120))
+        result_card.add_widget(self.result_label)
+        self.add_widget(result_card)
+
+    def calculate(self, instance):
+        try:
+            num1 = float(self.num1_input.text.strip())
+            num2 = float(self.num2_input.text.strip())
+        except ValueError:
+            self.result_label.text = "请输入有效的数字"
+            return
+
+        integer, remainder, large, small, desc = calculate_invite(num1, num2)
+        if integer is None:
+            self.result_label.text = desc
+            return
+
+        result_text = (
+            f"{desc}\n\n"
+            f"大数：{large}\n"
+            f"小数：{small}\n"
+            f"整数倍：{integer}\n"
+            f"余数：{remainder:.2f}"
+        )
+        self.result_label.text = result_text
 
 
 # ========== 主界面 ==========
@@ -272,332 +611,55 @@ class MainLayout(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
-        self.padding = dp(10)
-        self.spacing = dp(8)
 
-        # 当前选中的材质
-        self.current_material = MATERIALS[0]
+        # 设置背景
+        with self.canvas.before:
+            Color(rgba=get_color_from_hex(COLORS['bg_dark']))
+            self.bg = Rectangle(pos=self.pos, size=self.size)
+        self.bind(pos=self.update_bg, size=self.update_bg)
 
-        self.build_ui()
-
-    def build_ui(self):
-        # 标题
-        title = Label(
-            text=f"[b]舟舟算价助手 v{VERSION}[/b]",
-            markup=True,
-            font_size=dp(18),
-            size_hint_y=None,
-            height=dp(40)
-        )
-        self.add_widget(title)
-
-        # Tab切换
+        # 标签页
         self.tab_panel = TabbedPanel(
             do_default_tab=False,
             tab_width=Window.width / 3,
-            size_hint_y=1
+            background_color=get_color_from_hex(COLORS['bg_medium']),
         )
-
-        # 算价Tab
-        tab_price = TabbedPanelItem(text='算价')
-        tab_price.add_widget(self.build_price_tab())
-        self.tab_panel.add_widget(tab_price)
-
-        # 快捷备注Tab
-        tab_note = TabbedPanelItem(text='快捷备注')
-        tab_note.add_widget(self.build_note_tab())
-        self.tab_panel.add_widget(tab_note)
-
-        # 邀请下单Tab
-        tab_invite = TabbedPanelItem(text='邀请下单')
-        tab_invite.add_widget(self.build_invite_tab())
-        self.tab_panel.add_widget(tab_invite)
-
+        
+        tab1 = TabbedPanelItem(text="材质算价")
+        tab1.add_widget(PriceCalculatorTab())
+        
+        tab2 = TabbedPanelItem(text="快捷备注")
+        tab2.add_widget(QuickNoteTab())
+        
+        tab3 = TabbedPanelItem(text="邀请下单")
+        tab3.add_widget(InviteOrderTab())
+        
+        if CHINESE_FONT:
+            for tab in [tab1, tab2, tab3]:
+                tab.font_name = CHINESE_FONT
+        
+        self.tab_panel.add_widget(tab1)
+        self.tab_panel.add_widget(tab2)
+        self.tab_panel.add_widget(tab3)
+        
         self.add_widget(self.tab_panel)
 
-    def build_price_tab(self):
-        """算价Tab"""
-        layout = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(5))
-
-        # 材质选择
-        material_label = Label(text="选择材质：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(material_label)
-
-        material_names = [m["name"] for m in MATERIALS]
-        self.material_spinner = Spinner(
-            text=MATERIALS[0]["name"],
-            values=material_names,
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(12)
-        )
-        self.material_spinner.bind(text=self.on_material_selected)
-        layout.add_widget(self.material_spinner)
-
-        # 尺寸输入
-        size_label = Label(text="输入尺寸（如 100x120 或 1m x 1.2m）：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(size_label)
-
-        self.size_input = TextInput(
-            hint_text="例如：100x120",
-            multiline=False,
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(16)
-        )
-        layout.add_widget(self.size_input)
-
-        # 算价按钮
-        calc_btn = Button(
-            text="开始算价",
-            size_hint_y=None,
-            height=dp(50),
-            font_size=dp(16),
-            background_color=get_color_from_hex('#3B82F6')
-        )
-        calc_btn.bind(on_press=self.do_calculate)
-        layout.add_widget(calc_btn)
-
-        # 结果显示
-        self.result_label = Label(
-            text="请输入尺寸后点击算价",
-            font_size=dp(14),
-            halign='left',
-            valign='top',
-            markup=True
-        )
-        self.result_label.bind(size=self.result_label.setter('text_size'))
-        result_scroll = ScrollView(size_hint_y=1)
-        result_scroll.add_widget(self.result_label)
-        layout.add_widget(result_scroll)
-
-        return layout
-
-    def build_note_tab(self):
-        """快捷备注Tab"""
-        layout = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(5))
-
-        # 输入尺寸
-        input_label = Label(text="输入尺寸（如 100 200，三个数时最小为窄边）：", font_size=dp(13), size_hint_y=None, height=dp(25))
-        layout.add_widget(input_label)
-
-        self.note_input = TextInput(
-            hint_text="例如：100 200",
-            multiline=False,
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(16)
-        )
-        layout.add_widget(self.note_input)
-
-        # 按钮区域
-        btn_label = Label(text="选择备注类型：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(btn_label)
-
-        btn_grid = GridLayout(cols=3, spacing=dp(8), size_hint_y=None)
-        btn_grid.bind(minimum_height=btn_grid.setter('height'))
-
-        self.note_buttons = []
-        for btn_data in DEFAULT_NOTE_BUTTONS:
-            btn = Button(
-                text=btn_data["name"],
-                size_hint_y=None,
-                height=dp(45),
-                font_size=dp(13),
-                background_color=get_color_from_hex('#A855F7')
-            )
-            btn.bind(on_press=lambda instance, name=btn_data["name"]: self.do_generate_note(name))
-            btn_grid.add_widget(btn)
-            self.note_buttons.append(btn)
-
-        layout.add_widget(btn_grid)
-
-        # 输出区域
-        out_label = Label(text="生成的话术：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(out_label)
-
-        self.note_output = TextInput(
-            readonly=True,
-            multiline=True,
-            font_size=dp(14),
-            background_color=get_color_from_hex('#1E1E1E')
-        )
-        layout.add_widget(self.note_output)
-
-        # 复制按钮
-        copy_btn = Button(
-            text="一键复制话术",
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(15),
-            background_color=get_color_from_hex('#22C55E')
-        )
-        copy_btn.bind(on_press=self.copy_note)
-        layout.add_widget(copy_btn)
-
-        return layout
-
-    def build_invite_tab(self):
-        """邀请下单Tab"""
-        layout = BoxLayout(orientation='vertical', spacing=dp(8), padding=dp(5))
-
-        # 第一个数字
-        label1 = Label(text="第一个数字：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(label1)
-
-        self.invite_input1 = TextInput(
-            hint_text="输入数字",
-            multiline=False,
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(16)
-        )
-        layout.add_widget(self.invite_input1)
-
-        # 第二个数字
-        label2 = Label(text="第二个数字：", font_size=dp(14), size_hint_y=None, height=dp(25))
-        layout.add_widget(label2)
-
-        self.invite_input2 = TextInput(
-            hint_text="输入数字",
-            multiline=False,
-            size_hint_y=None,
-            height=dp(45),
-            font_size=dp(16)
-        )
-        layout.add_widget(self.invite_input2)
-
-        # 计算按钮
-        calc_btn = Button(
-            text="自动取整计算",
-            size_hint_y=None,
-            height=dp(50),
-            font_size=dp(16),
-            background_color=get_color_from_hex('#F97316')
-        )
-        calc_btn.bind(on_press=self.do_invite_calc)
-        layout.add_widget(calc_btn)
-
-        # 结果显示
-        self.invite_result = Label(
-            text="请输入两个数字后点击计算",
-            font_size=dp(15),
-            halign='left',
-            valign='top',
-            markup=True
-        )
-        self.invite_result.bind(size=self.invite_result.setter('text_size'))
-        result_scroll = ScrollView(size_hint_y=1)
-        result_scroll.add_widget(self.invite_result)
-        layout.add_widget(result_scroll)
-
-        return layout
-
-    def on_material_selected(self, spinner, text):
-        """材质选择变化"""
-        for m in MATERIALS:
-            if m["name"] == text:
-                self.current_material = m
-                break
-
-    def do_calculate(self, instance):
-        """执行算价"""
-        text = self.size_input.text.strip()
-        if not text:
-            self.result_label.text = "[color=#FF6B6B]请输入尺寸[/color]"
-            return
-
-        length, width, desc = parse_dimension(text)
-        if length is None:
-            self.result_label.text = f"[color=#FF6B6B]{desc}[/color]"
-            return
-
-        original, discount, final_l, final_w, area, weight, reason = calculate_price(
-            length, width, self.current_material, DISCOUNT
-        )
-
-        result_text = f"[b]{desc}[/b]\n\n"
-        result_text += f"材质：{self.current_material['name']}\n"
-        result_text += f"单价：{self.current_material['price']}元/㎡\n\n"
-        result_text += f"[color=#FFD700]{reason}[/color]\n\n"
-        result_text += f"撩尺后尺寸：{final_l}m x {final_w}m\n"
-        result_text += f"合计面积：{area}㎡\n"
-        result_text += f"重量：{weight}kg\n\n"
-        result_text += f"[size=20][color=#FF6B6B]原价：¥{original:.2f}[/color][/size]\n"
-        result_text += f"[size=20][color=#4ADE80]9折价：¥{discount:.2f}[/color][/size]\n\n"
-        result_text += f"[color=#AAAAAA]亲亲~原价 {original:.2f}元，立减优惠到 {discount:.2f}元【不支持平台优惠券和红包哦】[/color]"
-
-        self.result_label.text = result_text
-
-    def do_generate_note(self, button_name):
-        """生成备注话术"""
-        text = self.note_input.text.strip()
-        if not text:
-            self.note_output.text = "请先输入尺寸"
-            return
-
-        result = generate_note(button_name, text)
-        self.note_output.text = result
-
-    def copy_note(self, instance):
-        """复制备注话术到剪贴板"""
-        text = self.note_output.text.strip()
-        if not text or text == "请先输入尺寸":
-            return
-
-        # Kivy剪贴板
-        from kivy.core.clipboard import Clipboard
-        Clipboard.copy(text)
-
-        # 显示提示
-        popup = Popup(
-            title='成功',
-            content=Label(text='话术已复制到剪贴板！\n去千牛粘贴即可'),
-            size_hint=(None, None),
-            size=(dp(300), dp(150))
-        )
-        popup.open()
-
-    def do_invite_calc(self, instance):
-        """邀请下单计算"""
-        try:
-            num1 = float(self.invite_input1.text.strip())
-            num2 = float(self.invite_input2.text.strip())
-        except ValueError:
-            self.invite_result.text = "[color=#FF6B6B]请输入有效的数字[/color]"
-            return
-
-        result = calculate_invite(num1, num2)
-        if result[0] is None:
-            self.invite_result.text = f"[color=#FF6B6B]{result[4]}[/color]"
-            return
-
-        integer, remainder, large, small, desc = result
-
-        result_text = f"[b]计算结果[/b]\n\n"
-        result_text += f"大数：{large}\n"
-        result_text += f"小数：{small}\n\n"
-        result_text += f"[color=#FFD700]{desc}[/color]\n\n"
-        result_text += f"[size=18][color=#4ADE80]取整数：{integer}[/color][/size]\n"
-        result_text += f"[size=18][color=#FFA500]余数：{remainder:.2f}[/color][/size]"
-
-        self.invite_result.text = result_text
+    def update_bg(self, *args):
+        self.bg.pos = self.pos
+        self.bg.size = self.size
 
 
 # ========== 应用主类 ==========
-class PriceCalculatorApp(App):
+class ZhouzhouPriceApp(App):
     def build(self):
-        Window.clearcolor = get_color_from_hex('#1A1A2E')
+        # 强制竖屏
+        Window.rotation = 0
         return MainLayout()
 
     def on_start(self):
-        # 安卓悬浮窗权限请求（如果需要）
-        try:
-            from android.permissions import request_permissions, Permission
-            request_permissions([Permission.SYSTEM_ALERT_WINDOW])
-        except:
-            pass
+        # 再次确保竖屏
+        Window.rotation = 0
 
 
 if __name__ == '__main__':
-    PriceCalculatorApp().run()
+    ZhouzhouPriceApp().run()
